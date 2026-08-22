@@ -15,20 +15,81 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Ensure kubectl is available
+        run: |
+          if ! command -v kubectl &> /dev/null; then
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            mkdir -p $HOME/.local/bin
+            mv kubectl $HOME/.local/bin/kubectl
+            echo "$HOME/.local/bin" >> $GITHUB_PATH
+          fi
+
+      - name: Configure kubectl (in-cluster)
+        run: |
+          kubectl config set-cluster in-cluster --server=https://kubernetes.default.svc --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          kubectl config set-credentials in-cluster --token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+          kubectl config set-context in-cluster --cluster=in-cluster --user=in-cluster --namespace=github-runner
+          kubectl config use-context in-cluster
+
       - name: Set image tag
         id: vars
         run: echo "tag=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_OUTPUT
 
-      - name: Build and push image with Kaniko
-        uses: aevea/action-kaniko@master
-        with:
-          image: demo-service
-          registry: docker-registry.registry.svc.cluster.local:5000
-          tag: ${{ steps.vars.outputs.tag }}
-          path: demo-service
-          cache: false
-          insecure: true
-          insecure_pull: true
+      - name: Prepare build context ConfigMap
+        run: |
+          kubectl create configmap kaniko-context-${{ steps.vars.outputs.tag }} \
+            --from-file=Dockerfile=demo-service/Dockerfile \
+            --from-file=app.py=demo-service/app.py \
+            --from-file=requirements.txt=demo-service/requirements.txt \
+            -n github-runner \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Run Kaniko build job
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: kaniko-build-${{ steps.vars.outputs.tag }}
+            namespace: github-runner
+          spec:
+            backoffLimit: 0
+            ttlSecondsAfterFinished: 300
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: kaniko
+                    image: gcr.io/kaniko-project/executor:latest
+                    args:
+                      - "--dockerfile=/workspace/Dockerfile"
+                      - "--context=/workspace"
+                      - "--destination=docker-registry.registry.svc.cluster.local:5000/demo-service:${{ steps.vars.outputs.tag }}"
+                      - "--insecure"
+                      - "--skip-tls-verify"
+                    volumeMounts:
+                      - name: build-context
+                        mountPath: /workspace
+                volumes:
+                  - name: build-context
+                    configMap:
+                      name: kaniko-context-${{ steps.vars.outputs.tag }}
+          EOF
+
+      - name: Wait for Kaniko job to complete
+        run: |
+          kubectl wait --for=condition=complete --timeout=300s job/kaniko-build-${{ steps.vars.outputs.tag }} -n github-runner || \
+          (kubectl logs -n github-runner job/kaniko-build-${{ steps.vars.outputs.tag }} && exit 1)
+
+      - name: Show build logs
+        if: always()
+        run: kubectl logs -n github-runner job/kaniko-build-${{ steps.vars.outputs.tag }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kubectl delete configmap kaniko-context-${{ steps.vars.outputs.tag }} -n github-runner --ignore-not-found
 
     outputs:
       image_tag: ${{ steps.vars.outputs.tag }}
