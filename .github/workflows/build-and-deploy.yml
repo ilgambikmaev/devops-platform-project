@@ -1,0 +1,55 @@
+name: Build and Deploy demo-service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'demo-service/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: vars
+        run: echo "tag=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_OUTPUT
+
+      - name: Build and push image with Kaniko
+        uses: aevea/action-kaniko@master
+        with:
+          image: demo-service
+          registry: docker-registry.registry.svc.cluster.local:5000
+          tag: ${{ steps.vars.outputs.tag }}
+          path: demo-service
+          cache: false
+          insecure: true
+          insecure_pull: true
+
+    outputs:
+      image_tag: ${{ steps.vars.outputs.tag }}
+
+  update-helm-and-sync:
+    needs: build-and-push
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Helm chart image tag
+        run: |
+          sed -i "s/tag:.*/tag: \"${{ needs.build-and-push.outputs.image_tag }}\"/" helm/demo-service/values.yaml
+
+      - name: Commit and push updated Helm chart
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/demo-service/values.yaml
+          git commit -m "ci: update demo-service image tag to ${{ needs.build-and-push.outputs.image_tag }}" || echo "No changes to commit"
+          git push

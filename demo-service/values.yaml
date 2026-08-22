@@ -1,0 +1,31 @@
+replicaCount: 1
+
+image:
+  repository: docker-registry.registry.svc.cluster.local:5000/demo-service
+  tag: "dev"
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+env:
+  APP_VERSION: "0.1.0"
+
+# Подключение к общей инфраструктуре (заполняется по мере необходимости)
+kafka:
+  enabled: false
+  brokers: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
+
+redis:
+  enabled: false
+  host: "valkey-primary.demo.svc.cluster.local"
+  port: 6379
