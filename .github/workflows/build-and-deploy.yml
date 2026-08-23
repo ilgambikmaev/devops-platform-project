@@ -36,17 +36,9 @@ jobs:
         id: vars
         run: echo "tag=$(echo $GITHUB_SHA | cut -c1-8)" >> $GITHUB_OUTPUT
 
-      - name: Prepare build context ConfigMap
-        run: |
-          kubectl create configmap kaniko-context-${{ steps.vars.outputs.tag }} \
-            --from-file=Dockerfile=demo-service/Dockerfile \
-            --from-file=app.py=demo-service/app.py \
-            --from-file=requirements.txt=demo-service/requirements.txt \
-            -n github-runner \
-            --dry-run=client -o yaml | kubectl apply -f -
-
       - name: Run Kaniko build job
         run: |
+          kubectl delete job kaniko-build-${{ steps.vars.outputs.tag }} -n github-runner --ignore-not-found
           cat <<EOF | kubectl apply -f -
           apiVersion: batch/v1
           kind: Job
@@ -63,33 +55,35 @@ jobs:
                   - name: kaniko
                     image: gcr.io/kaniko-project/executor:latest
                     args:
-                      - "--dockerfile=/workspace/Dockerfile"
-                      - "--context=/workspace"
+                      - "--context=git://github.com/ilgambikmaev/devops-platform-project.git#refs/heads/main"
+                      - "--context-sub-path=demo-service"
+                      - "--dockerfile=Dockerfile"
                       - "--destination=docker-registry.registry.svc.cluster.local:5000/demo-service:${{ steps.vars.outputs.tag }}"
                       - "--insecure"
                       - "--skip-tls-verify"
-                    volumeMounts:
-                      - name: build-context
-                        mountPath: /workspace
-                volumes:
-                  - name: build-context
-                    configMap:
-                      name: kaniko-context-${{ steps.vars.outputs.tag }}
           EOF
 
       - name: Wait for Kaniko job to complete
         run: |
-          kubectl wait --for=condition=complete --timeout=300s job/kaniko-build-${{ steps.vars.outputs.tag }} -n github-runner || \
-          (kubectl logs -n github-runner job/kaniko-build-${{ steps.vars.outputs.tag }} && exit 1)
+          for i in $(seq 1 60); do
+            STATUS_SUCCEEDED=$(kubectl get job kaniko-build-${{ steps.vars.outputs.tag }} -n github-runner -o jsonpath="{.status.succeeded}")
+            STATUS_FAILED=$(kubectl get job kaniko-build-${{ steps.vars.outputs.tag }} -n github-runner -o jsonpath="{.status.failed}")
+            if [ "$STATUS_SUCCEEDED" == "1" ]; then
+              echo "Job succeeded"
+              exit 0
+            fi
+            if [ "$STATUS_FAILED" == "1" ]; then
+              echo "Job failed"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for job"
+          exit 1
 
       - name: Show build logs
         if: always()
         run: kubectl logs -n github-runner job/kaniko-build-${{ steps.vars.outputs.tag }}
-
-      - name: Cleanup
-        if: always()
-        run: |
-          kubectl delete configmap kaniko-context-${{ steps.vars.outputs.tag }} -n github-runner --ignore-not-found
 
     outputs:
       image_tag: ${{ steps.vars.outputs.tag }}
