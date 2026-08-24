@@ -1,0 +1,36 @@
+﻿replicaCount: 1
+image:
+  repository: 10.43.246.150:5000/demo-service
+  tag: "2c2dc8e8"
+  pullPolicy: Always
+service:
+  type: ClusterIP
+  port: 8080
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+env:
+  APP_VERSION: "0.1.0"
+  SERVICE_ROLE: "notification-dispatch"
+
+# Подключение к общей инфраструктуре
+kafka:
+  enabled: true
+  brokers: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
+redis:
+  enabled: true
+  host: "valkey-primary.demo.svc.cluster.local"
+  port: 6379
+database:
+  enabled: true
+  type: postgresql
+  host: "postgres-postgresql.demo.svc.cluster.local"
+  port: 5432
+  name: "appdb"
+  user: "postgres"
+  existingSecret: "postgres-postgresql"
+  secretPasswordKey: "postgres-password"
