@@ -1,4 +1,4 @@
-apiVersion: apps/v1
+﻿apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}
@@ -32,6 +32,23 @@ spec:
               value: {{ .Values.redis.host | quote }}
             - name: REDIS_PORT
               value: {{ .Values.redis.port | quote }}
+            {{- end }}
+            {{- if .Values.database.enabled }}
+            - name: DB_TYPE
+              value: {{ .Values.database.type | quote }}
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.secretPasswordKey }}
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
