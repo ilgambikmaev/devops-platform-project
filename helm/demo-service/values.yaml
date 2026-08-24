@@ -1,7 +1,7 @@
 ﻿replicaCount: 1
 image:
   repository: 10.43.246.150:5000/demo-service
-  tag: "bc8de934"
+  tag: "7864e138"
   pullPolicy: Always
 service:
   type: ClusterIP
