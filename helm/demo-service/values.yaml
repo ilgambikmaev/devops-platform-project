@@ -1,4 +1,4 @@
-replicaCount: 1
+п»їreplicaCount: 1
 image:
   repository: 10.43.246.150:5000/demo-service
   tag: v1.0.1
@@ -16,7 +16,7 @@ resources:
 env:
   APP_VERSION: "0.1.0"
 
-# Подключение к общей инфраструктуре
+# РџРѕРґРєР»СЋС‡РµРЅРёРµ Рє РѕР±С‰РµР№ РёРЅС„СЂР°СЃС‚СЂСѓРєС‚СѓСЂРµ
 kafka:
   enabled: true
   brokers: "my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092"
