@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}
+      annotations:
+        linkerd.io/inject: disabled
     spec:
       containers:
         - name: {{ .Release.Name }}
